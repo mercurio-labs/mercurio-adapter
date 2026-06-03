@@ -4,14 +4,14 @@ use mercurio_core::frontend::ast::{Declaration, GenericUsageDecl, SourceSpan};
 use mercurio_core::{
     AssessmentSpec, AssessmentStatus, ExecutionContext, Fact, Graph, KirDocument,
     MetamodelAttributeRegistry, RulePack, Runtime, RuntimeAssessmentRequest,
-    load_default_rulepacks, parsed_module_assessment_facts, run_graph_assessment,
-    run_runtime_assessment,
+    load_default_rulepacks, run_graph_assessment, run_runtime_assessment,
 };
 use mercurio_kerml::{compile_kerml_text, parse_kerml};
 use mercurio_requirements::requirements_table_view;
 use mercurio_sysml::{
     Diagnostic, SemanticCompileStatus, SourceLanguage, SysmlModule,
     compile_sysml_text_with_context_report, parse_sysml_recovering,
+    sysml_parsed_module_assessment_facts,
 };
 use mercurio_views::{DiagramError, DiagramRenderRequestDto, list_diagram_kinds, render_diagram};
 use serde::{Deserialize, Serialize};
@@ -208,7 +208,7 @@ pub fn wasm_run_source_assessment(input: &str, request: JsValue) -> JsValue {
             .iter()
             .map(snippet_diagnostic)
             .collect::<Vec<_>>();
-        let mut facts = parsed_module_assessment_facts(&parse_report.module);
+        let mut facts = sysml_parsed_module_assessment_facts(&parse_report.module);
         facts.extend(request.facts);
         let result = run_runtime_assessment(RuntimeAssessmentRequest {
             spec: request.spec,
