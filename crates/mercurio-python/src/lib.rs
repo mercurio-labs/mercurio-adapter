@@ -6,8 +6,11 @@ use mercurio_core::{
     AttributeWritePolicy, AuthoringProject, CommitMode, CommitResult, CommitStrategy,
     ContainerSelector, ElementView, ForkElement, Graph, KirDocument, MetamodelAttributeRegistry,
     ModelFork, ModelSession, ModelWorkspace, Mutation, QualifiedName, SemanticEdit, SessionError,
-    WorkspaceSnapshot, WriteBackMode, WriteBackResult, compile_sysml_text, create_empty_model,
-    default_language_profile, default_stdlib_path, generate_python_wrappers,
+    WorkspaceSnapshot, WriteBackMode, WriteBackResult, default_language_profile,
+    generate_python_wrappers,
+};
+use mercurio_sysml::{
+    SysmlModelForkExt, compile_sysml_text, default_sysml_library_path,
     load_authoring_project_from_sysml,
 };
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -334,7 +337,7 @@ impl PyModelFork {
         text: String,
     ) -> PyResult<PyForkElement> {
         self.inner
-            .requirement(&owner.inner, name, text)
+            .sysml_requirement(&owner.inner, name, text)
             .map(py_fork_element)
             .map_err(session_error)
     }
@@ -344,10 +347,15 @@ impl PyModelFork {
         owner: &PyForkElement,
         items: Vec<(String, String)>,
     ) -> PyResult<Vec<PyForkElement>> {
-        self.inner
-            .requirements(&owner.inner, items)
-            .map(|items| items.into_iter().map(py_fork_element).collect())
-            .map_err(session_error)
+        items
+            .into_iter()
+            .map(|(name, text)| {
+                self.inner
+                    .sysml_requirement(&owner.inner, name, text)
+                    .map(py_fork_element)
+                    .map_err(session_error)
+            })
+            .collect()
     }
 
     #[pyo3(signature = (owner, name, ty=None))]
@@ -358,7 +366,7 @@ impl PyModelFork {
         ty: Option<String>,
     ) -> PyResult<PyForkElement> {
         self.inner
-            .part(&owner.inner, name, ty)
+            .sysml_part(&owner.inner, name, ty)
             .map(py_fork_element)
             .map_err(session_error)
     }
@@ -405,13 +413,13 @@ struct PyModelBuilder {
 impl PyModelBuilder {
     #[new]
     #[pyo3(signature = (validate_each_mutation=true))]
-    fn new(validate_each_mutation: bool) -> Self {
-        Self {
-            project: create_empty_model(),
+    fn new(validate_each_mutation: bool) -> PyResult<Self> {
+        Ok(Self {
+            project: load_authoring_project_from_sysml(BTreeMap::new()).map_err(authoring_error)?,
             validate_each_mutation,
             pending_changed_files: BTreeSet::new(),
             pending_changed_declarations: BTreeSet::new(),
-        }
+        })
     }
 
     #[classmethod]
@@ -745,7 +753,7 @@ impl PyModelBuilder {
 fn default_stdlib_document() -> PyResult<&'static KirDocument> {
     DEFAULT_STDLIB_DOCUMENT
         .get_or_init(|| {
-            KirDocument::from_path(&default_stdlib_path()).map_err(|err| err.to_string())
+            KirDocument::from_path(&default_sysml_library_path()).map_err(|err| err.to_string())
         })
         .as_ref()
         .map_err(|err| PyRuntimeError::new_err(err.clone()))
@@ -917,7 +925,7 @@ mod tests {
 
     #[test]
     fn builder_creates_renders_and_compiles_model() {
-        let mut builder = PyModelBuilder::new(true);
+        let mut builder = PyModelBuilder::new(true).unwrap();
 
         builder
             .add_package("model.sysml".to_string(), "Demo".to_string())
@@ -960,7 +968,7 @@ mod tests {
 
     #[test]
     fn builder_can_defer_validation_until_requested() {
-        let mut builder = PyModelBuilder::new(false);
+        let mut builder = PyModelBuilder::new(false).unwrap();
 
         let package_result = builder
             .add_package("model.sysml".to_string(), "Demo".to_string())
@@ -989,7 +997,7 @@ mod tests {
     fn builder_can_set_abstract_attribute_and_render_sysml() {
         pyo3::prepare_freethreaded_python();
         Python::with_gil(|py| {
-            let mut builder = PyModelBuilder::new(true);
+            let mut builder = PyModelBuilder::new(true).unwrap();
             builder
                 .add_package("model.sysml".to_string(), "Demo".to_string())
                 .unwrap();
@@ -1048,11 +1056,11 @@ mod tests {
             assert_eq!(result.strategy_used, "rewrite_generated_source");
             assert_eq!(result.generated_elements, 4);
             assert!(
-                result.edited_files["generated/synthetic_requirements.sysml"]
+                result.edited_files["generated/synthetic_requirements.model"]
                     .contains("requirement Req00001")
             );
             assert!(
-                result.edited_files["generated/synthetic_requirements.sysml"]
+                result.edited_files["generated/synthetic_requirements.model"]
                     .contains("part controller")
             );
         });

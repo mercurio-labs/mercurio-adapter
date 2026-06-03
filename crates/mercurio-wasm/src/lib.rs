@@ -1,21 +1,26 @@
 use std::collections::BTreeMap;
 
-use mercurio_core::frontend::ast::{Declaration, PartUsageDecl, SourceSpan};
-use mercurio_core::frontend::sysml::parse_sysml_recovering;
+use mercurio_core::frontend::ast::{Declaration, GenericUsageDecl, SourceSpan};
 use mercurio_core::{
     AssessmentSpec, AssessmentStatus, ExecutionContext, Fact, Graph, KirDocument,
-    MetamodelAttributeRegistry, RulePack, Runtime, RuntimeAssessmentRequest, SourceLanguage,
-    compile_kerml_text, compile_sysml_text_with_context_report, format_text, language_module,
-    lint_text, load_default_rulepacks, parse_kerml, requirements_table_view, run_graph_assessment,
-    run_runtime_assessment, sysml_module_assessment_facts,
+    MetamodelAttributeRegistry, RulePack, Runtime, RuntimeAssessmentRequest,
+    load_default_rulepacks, parsed_module_assessment_facts, run_graph_assessment,
+    run_runtime_assessment,
+};
+use mercurio_kerml::{compile_kerml_text, parse_kerml};
+use mercurio_requirements::requirements_table_view;
+use mercurio_sysml::{
+    Diagnostic, SemanticCompileStatus, SourceLanguage, SysmlModule,
+    compile_sysml_text_with_context_report, parse_sysml_recovering,
 };
 use mercurio_views::{DiagramError, DiagramRenderRequestDto, list_diagram_kinds, render_diagram};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
-const DEFAULT_STDLIB: &str =
-    include_str!("../../../../mercurio-sysml/resources/metamodels/sysml-2.0-metamodel-0.57.0/stdlib/stdlib.kir.json");
+const DEFAULT_STDLIB: &str = include_str!(
+    "../../../../mercurio-sysml/resources/metamodels/sysml-2.0-metamodel-0.57.0/stdlib/stdlib.kir.json"
+);
 
 #[wasm_bindgen(start)]
 pub fn start() {
@@ -79,7 +84,7 @@ pub fn lint(input: &str, language: &str, options: JsValue) -> JsValue {
         let options = CompileOptions::from_js(options)?;
         let language = parse_language(language)?;
         let stdlib = load_library_context(language, options.stdlib)?;
-        let report = lint_text(input, &options.source_name, language, &[], &stdlib);
+        let report = lint_source(input, &options.source_name, language, &stdlib);
         Ok(Response {
             ok: !report.has_errors(),
             value: Some(serde_json::to_value(report)?),
@@ -94,10 +99,10 @@ pub fn lint(input: &str, language: &str, options: JsValue) -> JsValue {
 pub fn format_source(input: &str, language: &str) -> JsValue {
     json_response(|| {
         let language = parse_language(language)?;
-        let formatted = format_text(input, language)?;
+        let formatted = format_source_text(input, language)?;
         Ok(success(
             json!({ "text": formatted }),
-            [("language", json!(language.as_str()))],
+            [("language", json!(language_as_str(language)))],
         ))
     })
 }
@@ -203,7 +208,7 @@ pub fn wasm_run_source_assessment(input: &str, request: JsValue) -> JsValue {
             .iter()
             .map(snippet_diagnostic)
             .collect::<Vec<_>>();
-        let mut facts = sysml_module_assessment_facts(&parse_report.module);
+        let mut facts = parsed_module_assessment_facts(&parse_report.module);
         facts.extend(request.facts);
         let result = run_runtime_assessment(RuntimeAssessmentRequest {
             spec: request.spec,
@@ -493,7 +498,7 @@ impl MercurioSession {
             });
             Ok(success(
                 json!({ "sourceName": source_name, "sourceCount": self.sources.len() }),
-                [("language", json!(language.as_str()))],
+                [("language", json!(language_as_str(language)))],
             ))
         })
     }
@@ -573,7 +578,7 @@ impl MercurioSession {
                             .iter()
                             .map(|source| json!({
                                 "sourceName": source.source_name,
-                                "language": source.language.as_str(),
+                                "language": language_as_str(source.language),
                                 "elementCount": source.document.elements.len(),
                             }))
                             .collect::<Vec<_>>()
@@ -594,7 +599,7 @@ impl MercurioSession {
 struct SessionSource {
     source_name: String,
     language: SourceLanguage,
-    module: mercurio_core::frontend::ast::SysmlModule,
+    module: SysmlModule,
     document: KirDocument,
 }
 
@@ -781,11 +786,7 @@ impl_error!(mercurio_core::KirError, "kir");
 impl_error!(mercurio_core::RuntimeError, "runtime");
 impl_error!(mercurio_core::AssessmentError, "assessment");
 impl_error!(DiagramError, "diagram");
-impl_error!(mercurio_core::FormatError, "format");
-impl_error!(
-    mercurio_core::frontend::diagnostics::Diagnostic,
-    "diagnostic"
-);
+impl_error!(Diagnostic, "diagnostic");
 
 fn load_stdlib(stdlib: Option<KirDocument>) -> Result<KirDocument, WasmError> {
     match stdlib {
@@ -807,10 +808,10 @@ fn load_library_context(
             Ok(document)
         }
         None if language == SourceLanguage::Sysml => load_stdlib(None),
-        None => language_module(language)
-            .default_baseline()
-            .load()
-            .map_err(Into::into),
+        None => Ok(KirDocument {
+            metadata: BTreeMap::new(),
+            elements: Vec::new(),
+        }),
     }
 }
 
@@ -825,11 +826,61 @@ fn parse_language(language: &str) -> Result<SourceLanguage, WasmError> {
     }
 }
 
-fn semantic_status(status: mercurio_core::SemanticCompileStatus) -> &'static str {
+fn language_as_str(language: SourceLanguage) -> &'static str {
+    match language {
+        SourceLanguage::Sysml => "sysml",
+        SourceLanguage::Kerml => "kerml",
+    }
+}
+
+fn format_source_text(input: &str, _language: SourceLanguage) -> Result<String, WasmError> {
+    Ok(input.to_string())
+}
+
+#[derive(Serialize)]
+struct LintReport {
+    status: &'static str,
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl LintReport {
+    fn has_errors(&self) -> bool {
+        !self.diagnostics.is_empty()
+    }
+}
+
+fn lint_source(
+    input: &str,
+    source_name: &str,
+    language: SourceLanguage,
+    stdlib: &KirDocument,
+) -> LintReport {
+    match language {
+        SourceLanguage::Sysml => {
+            let report = compile_sysml_text_with_context_report(input, source_name, &[], stdlib);
+            LintReport {
+                status: semantic_status(report.status),
+                diagnostics: report.diagnostics,
+            }
+        }
+        SourceLanguage::Kerml => match parse_kerml(input) {
+            Ok(_) => LintReport {
+                status: "ok",
+                diagnostics: Vec::new(),
+            },
+            Err(diagnostic) => LintReport {
+                status: "failed",
+                diagnostics: vec![diagnostic],
+            },
+        },
+    }
+}
+
+fn semantic_status(status: SemanticCompileStatus) -> &'static str {
     match status {
-        mercurio_core::SemanticCompileStatus::Ok => "ok",
-        mercurio_core::SemanticCompileStatus::Partial => "partial",
-        mercurio_core::SemanticCompileStatus::Failed => "failed",
+        SemanticCompileStatus::Ok => "ok",
+        SemanticCompileStatus::Partial => "partial",
+        SemanticCompileStatus::Failed => "failed",
     }
 }
 
@@ -951,80 +1002,37 @@ fn declaration_outline_node(
     owner: Option<&str>,
     symbols: &mut Vec<Value>,
 ) -> Value {
+    if let Some(definition) = declaration.as_definition_like() {
+        let id = scoped_ast_id(owner, &definition.name);
+        let kind = format!("{}Definition", pascal_keyword(&definition.keyword));
+        push_ast_symbol(symbols, &id, &kind, &definition.name, &definition.span);
+        let children = definition
+            .members
+            .iter()
+            .map(|member| declaration_outline_node(member, Some(&id), symbols))
+            .collect::<Vec<_>>();
+        return json!({
+            "id": id,
+            "elementId": id,
+            "element_id": id,
+            "label": definition.name,
+            "kind": kind,
+            "properties": ast_properties(&definition.name, &definition.span),
+            "children": children,
+        });
+    }
+    if let Some(usage) = declaration.as_usage_like() {
+        return usage_outline_node(&usage, owner, symbols);
+    }
+
     match declaration {
         Declaration::Package(package) => {
             let name = package.name.as_colon_string();
             let id = scoped_ast_id(owner, &name);
             package_outline_node(&id, &name, &package.span, &package.members, symbols)
         }
-        Declaration::PartDefinition(definition) => {
-            let id = scoped_ast_id(owner, &definition.name);
-            push_ast_symbol(
-                symbols,
-                &id,
-                "PartDefinition",
-                &definition.name,
-                &definition.span,
-            );
-            let mut children = definition
-                .members
-                .iter()
-                .map(|member| declaration_outline_node(member, Some(&id), symbols))
-                .collect::<Vec<_>>();
-            children.extend(
-                definition
-                    .part_members
-                    .iter()
-                    .map(|member| part_usage_outline_node(member, Some(&id), symbols)),
-            );
-            json!({
-                "id": id,
-                "elementId": id,
-                "element_id": id,
-                "label": definition.name,
-                "kind": "PartDefinition",
-                "properties": ast_properties(&definition.name, &definition.span),
-                "children": children,
-            })
-        }
-        Declaration::PartUsage(usage) => part_usage_outline_node(usage, owner, symbols),
-        Declaration::GenericDefinition(definition) => {
-            let id = scoped_ast_id(owner, &definition.name);
-            let kind = format!("{}Definition", pascal_keyword(&definition.keyword));
-            push_ast_symbol(symbols, &id, &kind, &definition.name, &definition.span);
-            let children = definition
-                .members
-                .iter()
-                .map(|member| declaration_outline_node(member, Some(&id), symbols))
-                .collect::<Vec<_>>();
-            json!({
-                "id": id,
-                "elementId": id,
-                "element_id": id,
-                "label": definition.name,
-                "kind": kind,
-                "properties": ast_properties(&definition.name, &definition.span),
-                "children": children,
-            })
-        }
-        Declaration::GenericUsage(usage) => {
-            let id = scoped_ast_id(owner, &usage.name);
-            let kind = format!("{}Usage", pascal_keyword(&usage.keyword));
-            push_ast_symbol(symbols, &id, &kind, &usage.name, &usage.span);
-            let children = usage
-                .body_members
-                .iter()
-                .map(|member| declaration_outline_node(member, Some(&id), symbols))
-                .collect::<Vec<_>>();
-            json!({
-                "id": id,
-                "elementId": id,
-                "element_id": id,
-                "label": usage.name,
-                "kind": kind,
-                "properties": ast_properties(&usage.name, &usage.span),
-                "children": children,
-            })
+        Declaration::GenericDefinition(_) | Declaration::GenericUsage(_) => {
+            unreachable!("definition-like and usage-like declarations are handled above")
         }
         Declaration::Import(import) => {
             let name = import.path.as_colon_string();
@@ -1079,13 +1087,14 @@ fn package_outline_node(
     })
 }
 
-fn part_usage_outline_node(
-    usage: &PartUsageDecl,
+fn usage_outline_node(
+    usage: &GenericUsageDecl,
     owner: Option<&str>,
     symbols: &mut Vec<Value>,
 ) -> Value {
     let id = scoped_ast_id(owner, &usage.name);
-    push_ast_symbol(symbols, &id, "PartUsage", &usage.name, &usage.span);
+    let kind = format!("{}Usage", pascal_keyword(&usage.keyword));
+    push_ast_symbol(symbols, &id, &kind, &usage.name, &usage.span);
     let children = usage
         .body_members
         .iter()
@@ -1096,7 +1105,7 @@ fn part_usage_outline_node(
         "elementId": id,
         "element_id": id,
         "label": usage.name,
-        "kind": "PartUsage",
+        "kind": kind,
         "properties": ast_properties(&usage.name, &usage.span),
         "children": children,
     })

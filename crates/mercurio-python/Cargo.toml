@@ -10,5 +10,6 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 mercurio-core = { package = "mercurio-foundation", path = "../../../mercurio-foundation/crates/mercurio-foundation" }
+mercurio-sysml = { path = "../../../mercurio-sysml/crates/mercurio-sysml" }
 pyo3 = { workspace = true, features = ["extension-module"] }
 serde_json.workspace = true

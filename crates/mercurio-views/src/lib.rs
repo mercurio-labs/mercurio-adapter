@@ -834,7 +834,7 @@ fn table_type_is_element(target_type: &str) -> bool {
 
 fn table_type_identifier_matches(element: &Element, target_type: &str) -> bool {
     let target = canonical_table_type(target_type);
-    [element.element_id.as_str(), element.kind.as_str()]
+    [element.element_id.as_str(), element.kind.as_ref()]
         .into_iter()
         .any(|candidate| {
             let candidate = canonical_table_type(candidate);
@@ -881,7 +881,7 @@ fn table_cell_value(graph: &Graph, element: &Element, column: &TableColumnSpecDt
 
     match path {
         "id" | "element" => element.element_id.clone(),
-        "kind" => element.kind.clone(),
+        "kind" => element.kind.to_string(),
         "owner" => effective_property_text(graph, element, "owner")
             .or_else(|| owner_label(graph, element))
             .unwrap_or_default(),
@@ -902,7 +902,7 @@ fn resolve_metadata_path(element: &Element, path: &str) -> Option<String> {
     if type_name.trim().is_empty() || field_path.trim().is_empty() {
         return None;
     }
-    metadata_annotations_named(&element.properties, type_name)
+    metadata_annotations_named(&element.properties.to_btree_map(), type_name)
         .into_iter()
         .find_map(|annotation| value_path_text(&annotation.properties, field_path))
 }
@@ -927,7 +927,7 @@ fn resolve_element_path(graph: &Graph, element: &Element, path: &str) -> Option<
         if tail.peek().is_none() {
             return match segment {
                 "id" | "element" => Some(current.element_id.clone()),
-                "kind" => Some(current.kind.clone()),
+                "kind" => Some(current.kind.to_string()),
                 "name" => property_text(current, "declared_name")
                     .or_else(|| property_text(current, "name"))
                     .or_else(|| Some(label_for_id(&current.element_id))),
@@ -972,7 +972,7 @@ fn property_text(element: &Element, key: &str) -> Option<String> {
 fn effective_property_text(graph: &Graph, element: &Element, key: &str) -> Option<String> {
     property_text(element, key).or_else(|| {
         let ancestors = collect_specialization_ancestors(graph, element.id);
-        effective_properties(&ancestors, &element.properties)
+        effective_properties(&ancestors, &element.properties.to_btree_map())
             .get(key)
             .map(value_to_text)
     })
@@ -1139,7 +1139,10 @@ fn render_structure_diagram(
     let max_edges = effective_max_edges(&spec.query);
     'node_edges: for node_id in &traversal.visible_ids {
         for edge in graph.outgoing_edges(*node_id) {
-            if !relations.iter().any(|relation| relation == &edge.relation) {
+            if !relations
+                .iter()
+                .any(|relation| relation.as_str() == edge.relation.as_ref())
+            {
                 continue;
             }
             let Some(source) = graph.element_id(edge.source) else {
@@ -1154,8 +1157,8 @@ fn render_structure_diagram(
                     symbol: symbol_id_for_edge(&edge.relation, source, target),
                     source: source.to_string(),
                     target: target.to_string(),
-                    relation: edge.relation.clone(),
-                    label: edge.relation.clone(),
+                    relation: edge.relation.to_string(),
+                    label: edge.relation.to_string(),
                 });
                 if edges.len() >= max_edges {
                     warnings.push(format!(
@@ -1202,7 +1205,7 @@ fn render_structure_diagram(
                 role: "edge".to_string(),
                 source: Some(symbol_id_for_element(&edge.source)),
                 target: Some(symbol_id_for_element(&edge.target)),
-                relation: Some(edge.relation.clone()),
+                relation: Some(edge.relation.to_string()),
                 properties: edge_symbol_properties(edge.relation.as_str()),
             }))
             .collect(),
@@ -1490,14 +1493,14 @@ fn diagram_node(
         id: element.element_id.clone(),
         symbol: symbol_id_for_element(&element.element_id),
         label: label_for_id(&element.element_id),
-        kind: element.kind.clone(),
+        kind: element.kind.to_string(),
         layer: element.layer,
         badges: vec![format!("L{}", element.layer)],
         attributes,
         properties: element
             .properties
             .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
+            .map(|(key, value)| (key.to_string(), value.clone()))
             .collect(),
     }
 }
@@ -1629,11 +1632,12 @@ fn default_layout_direction() -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::Arc;
 
     use serde_json::json;
 
     use super::*;
-    use mercurio_core::graph::{Edge, Element, GraphArtifact};
+    use mercurio_core::graph::{Edge, Element, ElementProperties, GraphArtifact};
 
     fn sample_graph() -> (Graph, MetamodelAttributeRegistry) {
         let artifact = GraphArtifact {
@@ -1812,9 +1816,15 @@ mod tests {
         Element {
             id,
             element_id: element_id.to_string(),
-            kind: kind.to_string(),
+            kind: Arc::from(kind),
             layer,
-            properties,
+            properties: ElementProperties::from_declared_arc_for_artifact(
+                element_id.to_string(),
+                properties
+                    .into_iter()
+                    .map(|(key, value)| (Arc::from(key), value))
+                    .collect(),
+            ),
         }
     }
 
@@ -1822,7 +1832,7 @@ mod tests {
         Edge {
             source,
             target,
-            relation: relation.to_string(),
+            relation: Arc::from(relation),
         }
     }
 
