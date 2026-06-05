@@ -584,6 +584,24 @@ impl MercurioSession {
                         "stateCount":     m.states.len(),
                         "transitionCount": m.transitions.len(),
                         "initialStateId": initial,
+                        "states": m.states.iter().map(|s| {
+                            json!({
+                                "id": s.id,
+                                "label": s.label,
+                                "parentStateId": s.parent_state_id,
+                                "isInitial": s.is_initial,
+                                "isFinal": s.is_final,
+                            })
+                        }).collect::<Vec<_>>(),
+                        "transitions": m.transitions.iter().map(|t| {
+                            json!({
+                                "id": t.id,
+                                "source": t.source,
+                                "target": t.target,
+                                "trigger": t.trigger,
+                                "triggerKind": t.trigger_kind,
+                            })
+                        }).collect::<Vec<_>>(),
                     })
                 })
                 .collect::<Vec<_>>();
