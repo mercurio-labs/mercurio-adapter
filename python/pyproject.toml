@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mercurio"
 version = "0.1.0"
-description = "Python client for the Mercurio local HTTP backend."
+description = "Python client and capability authoring SDK for Mercurio."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -17,4 +17,4 @@ authors = [
 test = []
 
 [tool.setuptools]
-packages = ["mercurio"]
+packages = ["mercurio", "mercurio_capability"]

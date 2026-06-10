@@ -74,7 +74,7 @@ def launch_backend(
     timeout: float = 15.0,
 ) -> BackendProcess:
     exe = discover_executable(executable)
-    command = [exe, "server", "--host", host, "--port", str(port)]
+    command = [exe, "--host", host, "--port", str(port)]
     if workspace is not None:
         command.extend(["--workspace", str(workspace)])
 
