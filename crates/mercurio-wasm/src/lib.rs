@@ -8,12 +8,14 @@ use mercurio_core::{
 };
 use mercurio_kerml::{compile_kerml_text, parse_kerml};
 use mercurio_requirements::requirements_table_view;
+use mercurio_simulation::{
+    ConcurrentSimulationScenario, ConcurrentSubjectScenario, SimulationStatus,
+    StateMachineScenarioEvent, list_analysis_cases, run_analysis_case, run_concurrent_simulation,
+};
 use mercurio_sysml::{
-    ConcurrentSimulationScenario, ConcurrentSubjectScenario, Diagnostic, HybridSimulationScenario,
-    SemanticCompileStatus, SimulationSubject, SimulationTrace, SourceLanguage,
-    StateMachineScenarioEvent, SysmlModule, compile_sysml_text_with_context_report,
-    list_analysis_cases, parse_sysml_recovering, project_state_machines, run_analysis_case,
-    run_hybrid_simulation, sysml_parsed_module_assessment_facts,
+    Diagnostic, SemanticCompileStatus, SourceLanguage, SysmlModule,
+    compile_sysml_text_with_context_report, parse_sysml_recovering, project_state_machines,
+    sysml_parsed_module_assessment_facts,
 };
 use mercurio_views::{DiagramError, DiagramRenderRequestDto, list_diagram_kinds, render_diagram};
 use serde::{Deserialize, Serialize};
@@ -688,27 +690,25 @@ impl MercurioSession {
                 })
                 .collect();
 
-            let scenario = HybridSimulationScenario {
+            let scenario = ConcurrentSimulationScenario {
                 id: "wasm.simulation".to_string(),
-                subject: SimulationSubject {
-                    id: req.subject_id,
-                    type_id: None,
-                },
-                machine_id: req.machine_id,
-                initial_state_id: None,
-                events,
+                subjects: vec![ConcurrentSubjectScenario {
+                    subject_id: req.subject_id,
+                    machine_id: req.machine_id,
+                    initial_state_id: None,
+                    events,
+                }],
                 max_steps: req.max_steps.unwrap_or(200),
-                values,
+                clock_config: None,
+                initial_values: values,
                 step_duration_s: req.step_duration_s.unwrap_or(1.0),
+                requirements: Vec::new(),
+                objectives: Vec::new(),
             };
 
-            let report = run_hybrid_simulation(&runtime, scenario)
+            let trace = run_concurrent_simulation(&runtime, scenario)
                 .map_err(|e| WasmError::new("simulation", e.to_string()))?;
-            let trace: SimulationTrace = report.to_trace();
-            let completed = matches!(
-                trace.status,
-                mercurio_sysml::HybridSimulationStatus::Completed
-            );
+            let completed = matches!(trace.status, SimulationStatus::Completed);
             Ok(Response {
                 ok: completed,
                 value: Some(
@@ -765,15 +765,15 @@ impl MercurioSession {
                 subjects,
                 max_steps: req.max_steps.unwrap_or(300),
                 step_duration_s: req.step_duration_s.unwrap_or(1.0),
+                clock_config: None,
                 initial_values,
+                requirements: Vec::new(),
+                objectives: Vec::new(),
             };
 
-            let trace = mercurio_sysml::run_concurrent_simulation(&runtime, scenario)
+            let trace = run_concurrent_simulation(&runtime, scenario)
                 .map_err(|error| WasmError::new("simulation", error.to_string()))?;
-            let completed = matches!(
-                trace.status,
-                mercurio_sysml::HybridSimulationStatus::Completed
-            );
+            let completed = matches!(trace.status, SimulationStatus::Completed);
             Ok(Response {
                 ok: completed,
                 value: Some(
@@ -797,10 +797,7 @@ impl MercurioSession {
             let runtime = Runtime::from_document(self.merged_document()?)?;
             let trace = run_analysis_case(&runtime, &analysis_case_id)
                 .map_err(|error| WasmError::new("simulation", error.to_string()))?;
-            let completed = matches!(
-                trace.status,
-                mercurio_sysml::HybridSimulationStatus::Completed
-            );
+            let completed = matches!(trace.status, SimulationStatus::Completed);
             Ok(Response {
                 ok: completed,
                 value: Some(
