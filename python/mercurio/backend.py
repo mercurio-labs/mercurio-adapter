@@ -3,7 +3,7 @@ from __future__ import annotations
 from .client import MercurioClient
 from .models import VersionInfo
 from .process import BackendProcess, launch_backend
-from .workspace import MercurioWorkspace
+from .project import MercurioProject
 
 
 class Mercurio:
@@ -62,8 +62,11 @@ class Mercurio:
     def version(self) -> VersionInfo:
         return self.client.version()
 
-    def open_workspace(self, path: str, *, mode: str = "lazy") -> MercurioWorkspace:
-        return MercurioWorkspace(self.client, self.client.open_workspace(path, mode=mode))
+    def open_project(self, path: str, *, mode: str = "lazy") -> MercurioProject:
+        return MercurioProject(self.client, self.client.open_project(path, mode=mode))
+
+    def open_workspace(self, path: str, *, mode: str = "lazy") -> MercurioProject:
+        return self.open_project(path, mode=mode)
 
     def close(self) -> None:
         if self.process is not None:

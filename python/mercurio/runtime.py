@@ -2,23 +2,23 @@ from __future__ import annotations
 
 from .backend import Mercurio
 from .models import AnalysisCaseInfo, JsonObject, PartRef, SimulationTrace
-from .workspace import MercurioWorkspace
+from .project import MercurioProject
 
 
 class RawWorkspace:
     """Escape hatch: direct access to the raw KIR-shaped HTTP responses."""
 
-    def __init__(self, workspace: MercurioWorkspace) -> None:
-        self._workspace = workspace
+    def __init__(self, project: MercurioProject) -> None:
+        self._project = project
 
     def graph(self, scope: str | None = None) -> JsonObject:
-        return self._workspace.graph(scope=scope)
+        return self._project.graph(scope=scope)
 
     def model(self) -> JsonObject:
-        return self._workspace.model()
+        return self._project.model()
 
     def element(self, element_id: str) -> JsonObject:
-        return self._workspace.element(element_id)
+        return self._project.element(element_id)
 
 
 class Model:
@@ -32,13 +32,13 @@ class Model:
             trace = model.run_analysis("PrintSequence")
     """
 
-    def __init__(self, backend: Mercurio, workspace: MercurioWorkspace):
+    def __init__(self, backend: Mercurio, project: MercurioProject):
         self._backend = backend
-        self._workspace = workspace
-        self.raw = RawWorkspace(workspace)
+        self._project = project
+        self.raw = RawWorkspace(project)
 
     def parts(self) -> list[PartRef]:
-        return self._workspace.parts()
+        return self._project.parts()
 
     def part(self, name_or_id: str) -> PartRef:
         """Find a part by declared name or element id. Raises KeyError if not found."""
@@ -48,13 +48,13 @@ class Model:
         raise KeyError(f"No part with name or id {name_or_id!r}")
 
     def analysis_cases(self) -> list[AnalysisCaseInfo]:
-        return self._workspace.list_analysis_cases()
+        return self._project.list_analysis_cases()
 
     def run_analysis(self, case_id: str) -> SimulationTrace:
-        return self._workspace.run_analysis(case_id)
+        return self._project.run_analysis(case_id)
 
     def close(self) -> None:
-        self._workspace.close()
+        self._project.close()
         self._backend.close()
 
     def __enter__(self) -> "Model":

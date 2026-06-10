@@ -24,8 +24,8 @@ def open(
 
     backend = Mercurio.launch(executable=executable, timeout=timeout)
     try:
-        workspace = backend.open_workspace(path, mode="compiled")
+        project = backend.open_project(path, mode="compiled")
     except Exception:
         backend.close()
         raise
-    return Model(backend, workspace)
+    return Model(backend, project)

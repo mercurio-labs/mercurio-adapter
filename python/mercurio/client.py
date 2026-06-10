@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .errors import MercurioBackendError
-from .models import JsonObject, VersionInfo, WorkspaceInfo
+from .models import JsonObject, ProjectInfo, VersionInfo
 
 
 class MercurioClient:
@@ -23,19 +23,28 @@ class MercurioClient:
     def version(self) -> VersionInfo:
         return VersionInfo.from_json(self.get("/api/version"))
 
-    def open_workspace(self, path: str, *, mode: str = "lazy") -> WorkspaceInfo:
-        return WorkspaceInfo.from_open_json(
+    def open_project(self, path: str, *, mode: str = "lazy") -> ProjectInfo:
+        return ProjectInfo.from_open_json(
             self.post("/api/workspaces", {"path": path, "mode": mode})
         )
 
-    def list_workspaces(self) -> list[WorkspaceInfo]:
+    def open_workspace(self, path: str, *, mode: str = "lazy") -> ProjectInfo:
+        return self.open_project(path, mode=mode)
+
+    def list_projects(self) -> list[ProjectInfo]:
         return [
-            WorkspaceInfo.from_summary_json(item)
+            ProjectInfo.from_summary_json(item)
             for item in self.get("/api/workspaces")
         ]
 
+    def list_workspaces(self) -> list[ProjectInfo]:
+        return self.list_projects()
+
+    def delete_project(self, project_id: str) -> None:
+        self.delete(f"/api/workspaces/{project_id}")
+
     def delete_workspace(self, workspace_id: str) -> None:
-        self.delete(f"/api/workspaces/{workspace_id}")
+        self.delete_project(workspace_id)
 
     def get(self, path: str, query: dict[str, Any] | None = None) -> Any:
         return self._request("GET", path, query=query)

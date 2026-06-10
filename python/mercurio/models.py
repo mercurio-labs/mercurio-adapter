@@ -40,29 +40,40 @@ class BackendStartupInfo:
 
 
 @dataclass(frozen=True)
-class WorkspaceInfo:
-    workspace_id: str
-    workspace_root: str | None
+class ProjectInfo:
+    project_id: str
+    project_root: str | None
     active_path: str | None
     project: JsonObject | None
 
     @classmethod
-    def from_open_json(cls, data: JsonObject) -> "WorkspaceInfo":
+    def from_open_json(cls, data: JsonObject) -> "ProjectInfo":
         return cls(
-            workspace_id=str(data["workspaceId"]),
-            workspace_root=data.get("workspaceRoot"),
+            project_id=str(data["workspaceId"]),
+            project_root=data.get("workspaceRoot"),
             active_path=data.get("activePath"),
             project=data.get("project"),
         )
 
     @classmethod
-    def from_summary_json(cls, data: JsonObject) -> "WorkspaceInfo":
+    def from_summary_json(cls, data: JsonObject) -> "ProjectInfo":
         return cls(
-            workspace_id=str(data["workspaceId"]),
-            workspace_root=data.get("workspaceRoot"),
+            project_id=str(data["workspaceId"]),
+            project_root=data.get("workspaceRoot"),
             active_path=data.get("activePath"),
             project=data.get("project"),
         )
+
+    @property
+    def workspace_id(self) -> str:
+        return self.project_id
+
+    @property
+    def workspace_root(self) -> str | None:
+        return self.project_root
+
+
+WorkspaceInfo = ProjectInfo
 
 
 @dataclass(frozen=True)

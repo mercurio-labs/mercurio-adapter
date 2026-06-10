@@ -10,9 +10,10 @@ Thin Python HTTP client for a locally running Mercurio backend, plus the
 ```
 mercurio/
   __init__.py          - public API surface: mercurio.open(), Model
-  runtime.py           - Model context manager wrapping backend + workspace
+  runtime.py           - Model context manager wrapping backend + project
   backend.py           - private/advanced Mercurio.launch() / Mercurio.connect()
-  workspace.py         - private/advanced workspace-scoped HTTP convenience layer
+  project.py           - private/advanced project-scoped HTTP convenience layer
+  workspace.py         - compatibility alias for project.py
   client.py            - low-level HTTP GET/POST helpers
   models.py            - implementation dataclasses and typed result objects
   errors.py            - MercurioError hierarchy
@@ -40,7 +41,7 @@ with mercurio.open(".") as model:
 ```
 
 `mercurio.open(path)` returns `Model`. `model.raw` is the raw KIR/HTTP escape
-hatch. Low-level backend, client, workspace, runtime helper, and DTO classes
+hatch. Low-level backend, client, project, runtime helper, and DTO classes
 remain importable from their implementation modules for tests and advanced
 integration, but they are not top-level public API.
 
@@ -86,7 +87,7 @@ pytest tests/test_client.py -v
 ## Key Conventions
 
 - `__init__.py` is the public surface. Keep `__all__` limited to `open` and
-  `Model`; do not add implementation DTOs, backend/client/workspace classes, or
+  `Model`; do not add implementation DTOs, backend/client/project classes, or
   raw helper classes.
 - All dataclasses use `frozen=True` except `PartRef`, which uses plain
   `@dataclass` because parent links are set after construction.

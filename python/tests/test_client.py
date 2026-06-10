@@ -219,15 +219,15 @@ class ClientTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=5)
 
-    def test_version_handshake_and_workspace_open(self) -> None:
+    def test_version_handshake_and_project_open(self) -> None:
         version = self.backend.version()
         self.assertEqual(version.api_version, 1)
-        workspace = self.backend.open_workspace("C:/models/demo")
-        self.assertEqual(workspace.workspace_id, "ws_0000000000000001")
+        project = self.backend.open_project("C:/models/demo")
+        self.assertEqual(project.project_id, "ws_0000000000000001")
 
     def test_compile_project_preview_shapes_staged_files(self) -> None:
-        workspace = self.backend.open_workspace("C:/models/demo")
-        result = workspace.compile_project_preview(
+        project = self.backend.open_project("C:/models/demo")
+        result = project.compile_project_preview(
             staged_files={"model.sysml": "package Demo {}"}
         )
         self.assertTrue(result.ok)
@@ -242,9 +242,9 @@ class ClientTests(unittest.TestCase):
             [{"path": "model.sysml", "content": "package Demo {}"}],
         )
 
-    def test_save_file_uses_workspace_scoped_put(self) -> None:
-        workspace = self.backend.open_workspace("C:/models/demo")
-        workspace.save_file("model.sysml", "package Demo {}")
+    def test_save_file_uses_project_scoped_put(self) -> None:
+        project = self.backend.open_project("C:/models/demo")
+        project.save_file("model.sysml", "package Demo {}")
         request = FakeMercurioHandler.requests[-1]
         self.assertEqual(request["method"], "PUT")
         self.assertEqual(
@@ -306,17 +306,17 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(info.label, "PrintSequence")
         self.assertEqual(info.subject_count, 3)
 
-    def test_workspace_simulation_methods_use_scoped_routes(self) -> None:
-        workspace = self.backend.open_workspace("C:/models/demo")
+    def test_project_simulation_methods_use_scoped_routes(self) -> None:
+        project = self.backend.open_project("C:/models/demo")
 
-        cases = workspace.list_analysis_cases()
+        cases = project.list_analysis_cases()
         self.assertEqual(cases[0].label, "PrintSequence")
         self.assertEqual(
             FakeMercurioHandler.requests[-1]["path"],
             "/api/workspaces/ws_0000000000000001/simulation/analysis-cases",
         )
 
-        trace = workspace.run_analysis("analysis.PrintSequence")
+        trace = project.run_analysis("analysis.PrintSequence")
         self.assertEqual(trace.status, "completed")
         self.assertEqual(trace.channel("temperature").values, [22.0, 33.5])
         self.assertEqual(
@@ -353,9 +353,9 @@ class ClientTests(unittest.TestCase):
         self.assertIn("temperature", child.attrs())
         self.assertIn("heatRate", child.attrs())
 
-    def test_workspace_parts_uses_parts_endpoint(self) -> None:
-        workspace = self.backend.open_workspace("C:/models/demo")
-        parts = workspace.parts()
+    def test_project_parts_uses_parts_endpoint(self) -> None:
+        project = self.backend.open_project("C:/models/demo")
+        parts = project.parts()
         self.assertEqual(
             FakeMercurioHandler.requests[-1]["path"],
             "/api/workspaces/ws_0000000000000001/parts",
@@ -367,12 +367,12 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(parts[1].attr("missing", 99), 99)
 
     def test_model_runtime_part_finder(self) -> None:
-        workspace = self.backend.open_workspace("C:/models/demo")
+        project = self.backend.open_project("C:/models/demo")
         rt = Model.__new__(Model)
         rt._backend = self.backend
-        rt._workspace = workspace
+        rt._project = project
         from mercurio.runtime import RawWorkspace as _RW
-        rt.raw = _RW(workspace)
+        rt.raw = _RW(project)
 
         bed = rt.part("bed")
         self.assertEqual(bed.name, "bed")
@@ -385,12 +385,12 @@ class ClientTests(unittest.TestCase):
             rt.part("nonexistent")
 
     def test_model_runtime_raw_delegates(self) -> None:
-        workspace = self.backend.open_workspace("C:/models/demo")
+        project = self.backend.open_project("C:/models/demo")
         rt = Model.__new__(Model)
         rt._backend = self.backend
-        rt._workspace = workspace
+        rt._project = project
         from mercurio.runtime import RawWorkspace as _RW
-        rt.raw = _RW(workspace)
+        rt.raw = _RW(project)
 
         graph = rt.raw.graph()
         self.assertIn("nodes", graph)

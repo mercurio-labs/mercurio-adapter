@@ -17,7 +17,7 @@ Attach to an already-running backend:
 from mercurio.backend import Mercurio
 
 backend = Mercurio.connect("http://127.0.0.1:49152")
-workspace = backend.open_workspace("C:/models/demo")
+project = backend.open_project("C:/models/demo")
 ```
 
 The first release expects a Mercurio executable installed separately. Discovery order:
