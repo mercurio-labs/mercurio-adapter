@@ -14,5 +14,6 @@ embed-stdlib = ["mercurio-sysml/embed-stdlib"]
 [dependencies]
 mercurio-core = { package = "mercurio-foundation", path = "../../../mercurio-foundation/crates/mercurio-foundation" }
 mercurio-sysml = { path = "../../../mercurio-sysml/crates/mercurio-sysml" }
+mercurio-view-model = { path = "../mercurio-view-model" }
 pyo3 = { workspace = true, features = ["abi3-py310", "extension-module"] }
 serde_json.workspace = true

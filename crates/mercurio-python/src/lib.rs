@@ -12,6 +12,9 @@ use mercurio_core::{
 use mercurio_sysml::{
     SysmlModelForkExt, compile_sysml_text, load_authoring_project_from_sysml, load_sysml_baseline,
 };
+use mercurio_view_model::{
+    ElementDetailsDto, PartDto, element_details_from_graph, parts_from_graph,
+};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyType};
@@ -51,6 +54,139 @@ struct PySemanticModel {
     document: Arc<KirDocument>,
     graph: Arc<Graph>,
     registry: Arc<MetamodelAttributeRegistry>,
+}
+
+#[pyclass(name = "PyWorkspace")]
+#[derive(Clone)]
+struct PyWorkspace {
+    document: Arc<KirDocument>,
+    graph: Arc<Graph>,
+}
+
+#[pymethods]
+impl PyWorkspace {
+    #[staticmethod]
+    fn open(path: &str) -> PyResult<Self> {
+        let document = compile_workspace_path(Path::new(path))?;
+        let graph = Graph::from_document(document.clone())
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+        Ok(Self {
+            document: Arc::new(document),
+            graph: Arc::new(graph),
+        })
+    }
+
+    fn model(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(self.document.as_ref())
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+
+    fn parts(&self) -> Vec<PyPartRef> {
+        parts_from_graph(&self.graph)
+            .into_iter()
+            .map(|inner| PyPartRef { inner })
+            .collect()
+    }
+
+    fn element(&self, id: &str) -> Option<PyKirElement> {
+        element_details_from_graph(&self.graph, id).map(|inner| PyKirElement { inner })
+    }
+
+    fn compile(&self) -> PyResult<PySemanticModel> {
+        py_semantic_model((*self.document).clone())
+    }
+
+    fn list_analysis_cases(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn run_analysis(&self, case_id: &str) -> PyResult<()> {
+        Err(PyValueError::new_err(format!(
+            "analysis case `{case_id}` is not available in the native read workspace yet"
+        )))
+    }
+}
+
+#[pyclass(name = "PyPartRef")]
+#[derive(Debug, Clone)]
+struct PyPartRef {
+    inner: PartDto,
+}
+
+#[pymethods]
+impl PyPartRef {
+    #[getter]
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    #[getter]
+    fn name(&self) -> &str {
+        &self.inner.name
+    }
+
+    #[getter]
+    fn kind(&self) -> &str {
+        &self.inner.kind
+    }
+
+    #[getter]
+    fn element_kind(&self) -> &str {
+        &self.inner.element_kind
+    }
+
+    #[getter]
+    fn parent_id(&self) -> Option<&str> {
+        self.inner.parent_id.as_deref()
+    }
+
+    #[getter]
+    fn depth(&self) -> u32 {
+        self.inner.depth
+    }
+
+    fn attr(&self, name: &str) -> PyResult<Option<String>> {
+        self.inner
+            .attributes
+            .get(name)
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+}
+
+#[pyclass(name = "PyKirElement")]
+#[derive(Debug, Clone)]
+struct PyKirElement {
+    inner: ElementDetailsDto,
+}
+
+#[pymethods]
+impl PyKirElement {
+    #[getter]
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    #[getter]
+    fn label(&self) -> &str {
+        &self.inner.label
+    }
+
+    #[getter]
+    fn kind(&self) -> &str {
+        &self.inner.kind
+    }
+
+    #[getter]
+    fn layer(&self) -> u8 {
+        self.inner.layer
+    }
+
+    fn json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner)
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
 }
 
 #[pymethods]
@@ -756,6 +892,62 @@ fn default_stdlib_document() -> PyResult<&'static KirDocument> {
         .map_err(|err| PyRuntimeError::new_err(err.clone()))
 }
 
+fn compile_workspace_path(path: &Path) -> PyResult<KirDocument> {
+    if path.is_file() {
+        let source = std::fs::read_to_string(path).map_err(io_error)?;
+        return compile_sysml_text(
+            &source,
+            &path.display().to_string(),
+            default_stdlib_document()?,
+        )
+        .map_err(|err| PyValueError::new_err(err.to_string()));
+    }
+
+    if !path.is_dir() {
+        return Err(PyValueError::new_err(format!(
+            "workspace path does not exist: {}",
+            path.display()
+        )));
+    }
+
+    let mut files = BTreeMap::new();
+    collect_sysml_files(path, path, &mut files)?;
+    if files.is_empty() {
+        return Err(PyValueError::new_err(format!(
+            "workspace contains no .sysml files: {}",
+            path.display()
+        )));
+    }
+    let project = load_authoring_project_from_sysml(files).map_err(authoring_error)?;
+    project.compile_kir_document().map_err(authoring_error)
+}
+
+fn collect_sysml_files(
+    root: &Path,
+    current: &Path,
+    files: &mut BTreeMap<String, String>,
+) -> PyResult<()> {
+    for entry in std::fs::read_dir(current).map_err(io_error)? {
+        let entry = entry.map_err(io_error)?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_sysml_files(root, &path, files)?;
+            continue;
+        }
+        if path.extension().and_then(|value| value.to_str()) != Some("sysml") {
+            continue;
+        }
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let source = std::fs::read_to_string(&path).map_err(io_error)?;
+        files.insert(relative, source);
+    }
+    Ok(())
+}
+
 fn py_semantic_model(document: KirDocument) -> PyResult<PySemanticModel> {
     let graph = Graph::from_document(document.clone())
         .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
@@ -778,6 +970,9 @@ fn _core(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 fn register_module(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<PyWorkspace>()?;
+    module.add_class::<PyPartRef>()?;
+    module.add_class::<PyKirElement>()?;
     module.add_class::<PyModelBuilder>()?;
     module.add_class::<PyWriteBackResult>()?;
     module.add_class::<PySemanticModel>()?;
