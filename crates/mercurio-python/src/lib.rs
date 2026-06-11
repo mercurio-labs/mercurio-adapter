@@ -81,6 +81,11 @@ impl PyWorkspace {
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
 
+    fn graph(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.graph.artifact())
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+
     fn parts(&self) -> Vec<PyPartRef> {
         parts_from_graph(&self.graph)
             .into_iter()
@@ -96,8 +101,10 @@ impl PyWorkspace {
         py_semantic_model((*self.document).clone())
     }
 
-    fn list_analysis_cases(&self) -> Vec<String> {
-        Vec::new()
+    fn list_analysis_cases(&self) -> PyResult<Vec<String>> {
+        Err(PyValueError::new_err(
+            "analysis cases are not available in the native read workspace yet; open with an HTTP sidecar executable for simulation",
+        ))
     }
 
     fn run_analysis(&self, case_id: &str) -> PyResult<()> {
@@ -152,6 +159,10 @@ impl PyPartRef {
             .map(serde_json::to_string)
             .transpose()
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+
+    fn json(&self) -> PyResult<String> {
+        serde_json::to_string(&self.inner).map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
 }
 

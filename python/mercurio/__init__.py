@@ -4,7 +4,6 @@ from .runtime import Model
 
 __all__ = [
     "Model",
-    "ModelBuilder",
     "open",
 ]
 
