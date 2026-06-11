@@ -10,7 +10,8 @@ use mercurio_core::{
     generate_python_wrappers,
 };
 use mercurio_sysml::{
-    SysmlModelForkExt, compile_sysml_text, load_authoring_project_from_sysml, load_sysml_baseline,
+    StdlibLocator, SysmlModelForkExt, compile_sysml_text, load_authoring_project_from_sysml,
+    load_sysml_baseline, resolve_default_stdlib_locator,
 };
 use mercurio_view_model::{
     ElementDetailsDto, PartDto, element_details_from_graph, parts_from_graph,
@@ -76,8 +77,20 @@ impl PyWorkspace {
         })
     }
 
+    #[getter]
+    fn stdlib_locator(&self) -> String {
+        StdlibLocator::from_env()
+            .unwrap_or_else(resolve_default_stdlib_locator)
+            .as_uri()
+    }
+
     fn model(&self) -> PyResult<String> {
         serde_json::to_string_pretty(self.document.as_ref())
+            .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+
+    fn graph(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.graph.artifact())
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
 
@@ -96,8 +109,10 @@ impl PyWorkspace {
         py_semantic_model((*self.document).clone())
     }
 
-    fn list_analysis_cases(&self) -> Vec<String> {
-        Vec::new()
+    fn list_analysis_cases(&self) -> PyResult<Vec<String>> {
+        Err(PyValueError::new_err(
+            "analysis cases are not available in the native read workspace yet; open with an HTTP sidecar executable for simulation",
+        ))
     }
 
     fn run_analysis(&self, case_id: &str) -> PyResult<()> {
@@ -152,6 +167,10 @@ impl PyPartRef {
             .map(serde_json::to_string)
             .transpose()
             .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    }
+
+    fn json(&self) -> PyResult<String> {
+        serde_json::to_string(&self.inner).map_err(|err| PyRuntimeError::new_err(err.to_string()))
     }
 }
 

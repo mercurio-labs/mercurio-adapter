@@ -22,12 +22,12 @@ class FakeMercurioHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/version":
             self.write_json(
-                {"service": "mercurio-core", "version": "0.1.0", "apiVersion": 1}
+                {"service": "mercurio-foundation", "version": "0.1.0", "apiVersion": 1}
             )
             return
         if parsed.path == "/api/health":
             self.write_json(
-                {"service": "mercurio-core", "version": "0.1.0", "status": "ok"}
+                {"service": "mercurio-foundation", "version": "0.1.0", "status": "ok"}
             )
             return
         if parsed.path == "/api/workspaces":

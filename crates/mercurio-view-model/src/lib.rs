@@ -22,7 +22,6 @@ pub struct PartDto {
 }
 
 pub fn parts_from_graph(graph: &Graph) -> Vec<PartDto> {
-    const PART_KINDS: &[&str] = &["PartUsage", "PartDefinition", "IndividualUsage"];
     const SKIP_PROPS: &[&str] = &[
         "declared_name",
         "name",
@@ -37,7 +36,7 @@ pub fn parts_from_graph(graph: &Graph) -> Vec<PartDto> {
     let part_elements = graph
         .elements()
         .iter()
-        .filter(|element| PART_KINDS.iter().any(|kind| element.kind.contains(kind)))
+        .filter(|element| is_part_kind(&element.kind))
         .collect::<Vec<_>>();
 
     let part_id_set = part_elements
@@ -120,6 +119,27 @@ pub fn parts_from_graph(graph: &Graph) -> Vec<PartDto> {
         .collect()
 }
 
+fn is_part_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "PartUsage"
+            | "PartDefinition"
+            | "IndividualUsage"
+            | "model.PartUsage"
+            | "model.PartDefinition"
+            | "model.IndividualUsage"
+            | "Model::PartUsage"
+            | "Model::Systems::PartUsage"
+            | "Model::Systems::PartDefinition"
+            | "SysML::PartUsage"
+            | "SysML::PartDefinition"
+            | "SysML::Parts::PartUsage"
+            | "SysML::Parts::PartDefinition"
+            | "SysML::Systems::PartUsage"
+            | "SysML::Systems::PartDefinition"
+    )
+}
+
 pub fn element_details_from_graph(graph: &Graph, id: &str) -> Option<ElementDetailsDto> {
     let registry = MetamodelAttributeRegistry::build(graph);
     element_details(graph, &registry, id)
@@ -170,5 +190,34 @@ mod tests {
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[1].parent_id.as_deref(), Some("type.Demo.Vehicle"));
         assert_eq!(parts[1].depth, 1);
+    }
+
+    #[test]
+    fn part_projection_uses_known_kinds_not_substrings() {
+        let document = KirDocument {
+            metadata: BTreeMap::new(),
+            elements: vec![
+                KirElement {
+                    id: "feature.Demo.Vehicle.engine".to_string(),
+                    kind: "SysML::Systems::PartUsage".to_string(),
+                    layer: 2,
+                    properties: BTreeMap::from([(
+                        "declared_name".to_string(),
+                        Value::String("engine".to_string()),
+                    )]),
+                },
+                KirElement {
+                    id: "diagnostic.Demo.NotPart".to_string(),
+                    kind: "DiagnosticPartUsageMarker".to_string(),
+                    layer: 2,
+                    properties: BTreeMap::new(),
+                },
+            ],
+        };
+        let graph = Graph::from_document(document).expect("test graph");
+        let parts = parts_from_graph(&graph);
+
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].id, "feature.Demo.Vehicle.engine");
     }
 }

@@ -1,8 +1,8 @@
 # mercurio-wasm
 
-Browser-facing WebAssembly adapter for `mercurio-core`.
+Browser-facing WebAssembly adapter for `mercurio-foundation` and the SysML language services.
 
-The design keeps Rust domain logic in `mercurio-core` and exposes a compact JSON API at the JS boundary. Browser callers can use one-shot functions for simple workflows or `MercurioSession` to keep compiled sources and derived indexes in memory.
+The design keeps Rust domain logic in foundation/SysML crates and exposes a compact JSON API at the JS boundary. Browser callers can use one-shot functions for simple workflows or `MercurioSession` to keep compiled sources and derived indexes in memory.
 
 ## Build
 
