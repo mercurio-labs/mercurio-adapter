@@ -26,6 +26,29 @@ class ModelBuilder:
     def for_metamodel(cls, _id: str) -> "ModelBuilder":
         return cls()
 
+    @classmethod
+    def from_files(
+        cls,
+        files: dict[str, str],
+        *,
+        validate: bool = True,
+    ) -> "ModelBuilder":
+        """Load an existing set of SysML source files into an editable builder.
+
+        *files* is a mapping of relative file paths to source text, e.g.::
+
+            {"model/spacecraft.sysml": open("model/spacecraft.sysml").read()}
+
+        The builder is seeded with the parsed content; subsequent calls to
+        ``add()``, ``rename()``, etc. mutate it in-place.  Call ``save()``
+        or ``to_sysml()`` to get the updated source.
+        """
+        obj = cls.__new__(cls)
+        obj._inner = _NativeModelBuilder.from_sysml_files(files, validate)
+        obj._default_package = None
+        obj._default_file = next(iter(files)) if files else "model.sysml"
+        return obj
+
     def in_package(self, name: str) -> "ModelBuilder":
         self._inner.add_package(self._default_file, name)
         self._default_package = name
@@ -42,6 +65,29 @@ class ModelBuilder:
         if self._default_package is None:
             raise ValueError("call in_package() before add()")
         element._emit(self._inner, self._default_package)
+        return self
+
+    def rename(self, qualified_name: str, new_name: str) -> "ModelBuilder":
+        """Rename any declared element by its qualified name."""
+        self._inner.rename(qualified_name, new_name)
+        return self
+
+    def set_expression(
+        self, qualified_name: str, expression: str | None
+    ) -> "ModelBuilder":
+        """Set or clear the value expression on a usage."""
+        self._inner.set_expression(qualified_name, expression)
+        return self
+
+    def add_to(
+        self, container: str, element: "_Declaration"
+    ) -> "ModelBuilder":
+        """Add an element into an existing container by qualified name.
+
+        Use this (instead of ``add()``) when editing a model loaded with
+        ``from_files()``, where the package is already defined.
+        """
+        element._emit(self._inner, container)
         return self
 
     def to_sysml(self) -> dict[str, str]:
