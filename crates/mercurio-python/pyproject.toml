@@ -13,3 +13,9 @@ license = "MIT"
 features = ["embed-stdlib"]
 python-source = "../../python"
 module-name = "mercurio._core"
+include = [
+  { path = "mercurio/**/*", format = "wheel" }
+]
+exclude = [
+  { path = "mercurio/**/__pycache__/**", format = "wheel" }
+]
